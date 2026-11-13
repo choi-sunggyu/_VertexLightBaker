@@ -16,9 +16,9 @@ URP 프로젝트에서 **방향광(Directional Light)과 실시간 그림자를 
 ## 설치
 **Window > Package Manager > + > Install package from git URL…** 에 다음 주소를 넣습니다.
 ```
-https://github.com/<계정>/<저장소>.git
+https://github.com/choi-sunggyu/_VertexLightBaker.git#v0.1.0
 ```
-특정 버전으로 고정하려면 주소 끝에 `#v0.1.0`처럼 태그를 붙입니다.
+`#v0.1.0` 부분은 버전 태그입니다. 빼면 main 최신 상태를 받습니다.
 
 ## 사용 방법
 > 씬을 크게 바꾸는 작업입니다. 깃에 커밋한 뒤 실행하세요. 원본 모델과 재질은 수정하지 않고 복사본을 만듭니다.
