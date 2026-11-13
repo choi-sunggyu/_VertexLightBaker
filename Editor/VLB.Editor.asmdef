@@ -1,0 +1,7 @@
+{
+    "name": "VLB.Editor",
+    "rootNamespace": "VLB",
+    "references": ["VLB.Runtime"],
+    "includePlatforms": ["Editor"],
+    "autoReferenced": true
+}

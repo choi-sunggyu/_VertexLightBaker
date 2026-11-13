@@ -1,0 +1,6 @@
+{
+    "name": "VLB.Runtime",
+    "rootNamespace": "VLB",
+    "references": [],
+    "autoReferenced": true
+}
