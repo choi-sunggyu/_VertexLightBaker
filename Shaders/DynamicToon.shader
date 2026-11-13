@@ -16,6 +16,8 @@ Shader "Custom/DynamicToon"
     {
         _BaseMap("Base Map", 2D) = "white" {}
         _BaseColor("Base Color", Color) = (1,1,1,1)
+        [Toggle(_ALPHATEST_ON)] _AlphaClip("Alpha Clip", Float) = 0
+        _Cutoff("Alpha Cutoff", Range(0, 1)) = 0.5
         _HColor("Highlight Color", Color) = (1,1,1,1)
         _SColor("Shadow Color", Color) = (0.55,0.55,0.65,1)
         _RampThreshold("Ramp Threshold", Range(0, 1)) = 0.5
@@ -41,6 +43,7 @@ Shader "Custom/DynamicToon"
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
             half4  _BaseColor;
+            half   _Cutoff;
             half4  _HColor;
             half4  _SColor;
             half   _RampThreshold;
@@ -62,6 +65,7 @@ Shader "Custom/DynamicToon"
             #pragma vertex vert
             #pragma fragment frag
             #pragma shader_feature_local _USE_VERTEX_COLOR
+            #pragma shader_feature_local _ALPHATEST_ON
             #pragma shader_feature_local _SHADE_MASK
             #pragma multi_compile_fog
 
@@ -108,6 +112,9 @@ Shader "Custom/DynamicToon"
             half4 frag(Varyings IN) : SV_Target
             {
                 half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv) * _BaseColor;
+                #if defined(_ALPHATEST_ON)
+                    clip(albedo.a - _Cutoff); // 알파 컷 (잎·철망 등). 투명 재질은 변환하지 않음
+                #endif
                 #if defined(_USE_VERTEX_COLOR)
                     albedo *= IN.color;
                 #endif
@@ -135,18 +142,27 @@ Shader "Custom/DynamicToon"
             HLSLPROGRAM
             #pragma vertex vertDepth
             #pragma fragment fragDepth
+            #pragma shader_feature_local _ALPHATEST_ON
 
-            struct AttributesD { float4 positionOS : POSITION; };
-            struct VaryingsD   { float4 positionCS : SV_POSITION; };
+            struct AttributesD { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
+            struct VaryingsD   { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
 
             VaryingsD vertDepth(AttributesD IN)
             {
                 VaryingsD OUT;
                 OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
                 return OUT;
             }
 
-            half fragDepth(VaryingsD IN) : SV_Target { return IN.positionCS.z; }
+            half fragDepth(VaryingsD IN) : SV_Target
+            {
+                // 깊이에도 구멍을 뚫어야 깊이 텍스처를 쓰는 효과가 잎·철망 뒤를 가리지 않음
+                #if defined(_ALPHATEST_ON)
+                    clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).a * _BaseColor.a - _Cutoff);
+                #endif
+                return IN.positionCS.z;
+            }
             ENDHLSL
         }
     }

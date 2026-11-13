@@ -157,6 +157,40 @@ public class VertexLightBakerTests
         }
     }
 
+    // 원인 재현: Synty 처럼 이름이 URP Lit 이 아닌 Lit 셰이더(그래프)를 변환하지 않아, 방향광을 지운 뒤 배경이 밤처럼 어두워졌음.
+    // 이름이 아니라 "주 방향광을 받는가"로 판단해야 함
+    [Test]
+    public void UsesMainLight_DetectsLitByBehaviourNotName()
+    {
+        Assert.IsTrue(VertexLightBaker.UsesMainLight(Shader.Find("Universal Render Pipeline/Lit")));
+        Assert.IsTrue(VertexLightBaker.UsesMainLight(Shader.Find("Universal Render Pipeline/Simple Lit")));
+        Assert.IsFalse(VertexLightBaker.UsesMainLight(Shader.Find("Universal Render Pipeline/Unlit")));
+        foreach (var name in new[] { "Custom/BakedVertexLit", "Custom/BakedToon", "Custom/LowCostCharacter", "Custom/DynamicToon" })
+            Assert.IsFalse(VertexLightBaker.UsesMainLight(Shader.Find(name)), name); // 변환 결과는 방향광이 필요 없음
+    }
+
+    // 알파 컷 재질도 변환: 기준값을 옮기고 같은 방식으로 자름 (예전에는 건너뛰어 방향광 없이 어두워졌음)
+    [Test]
+    public void TransferAlphaClip_CopiesThresholdAndKeyword()
+    {
+        var src = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        var opaque = new Material(Shader.Find("Universal Render Pipeline/Lit"));
+        var dst = new Material(Shader.Find("Custom/BakedVertexLit"));
+        var dstOpaque = new Material(Shader.Find("Custom/BakedVertexLit"));
+        created.Add(src); created.Add(opaque); created.Add(dst); created.Add(dstOpaque);
+        src.SetFloat("_AlphaClip", 1f);
+        src.EnableKeyword("_ALPHATEST_ON");
+        src.SetFloat("_Cutoff", 0.3f);
+
+        VertexLightBaker.TransferAlphaClip(src, dst);
+        Assert.IsTrue(dst.IsKeywordEnabled("_ALPHATEST_ON"));
+        Assert.AreEqual(0.3f, dst.GetFloat("_Cutoff"), 1e-4f);
+        Assert.AreEqual((int)UnityEngine.Rendering.RenderQueue.AlphaTest, dst.renderQueue);
+
+        VertexLightBaker.TransferAlphaClip(opaque, dstOpaque); // 불투명은 그대로
+        Assert.IsFalse(dstOpaque.IsKeywordEnabled("_ALPHATEST_ON"));
+    }
+
     // 보정 마스크는 기본 꺼짐: 기존 재질의 모습이 바뀌지 않음
     [Test]
     public void ShadeMask_OffByDefault()

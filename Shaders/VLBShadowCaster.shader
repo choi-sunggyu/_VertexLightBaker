@@ -34,6 +34,7 @@ Shader "Hidden/VLB/ShadowCaster"
                 return TransformWorldToHClip(p);
             }
 
+            // shortcut: 알파 컷 구멍을 무시하고 꽉 찬 모양으로 찍음. 잎·철망 그림자가 어색하면 재질별 텍스처로 clip 하도록 바꿀 것
             half4 frag() : SV_Target { return 0; }
             ENDHLSL
         }

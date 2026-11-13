@@ -11,14 +11,14 @@ URP 프로젝트에서 **방향광(Directional Light)과 실시간 그림자를 
 ## 요구 사항
 - Unity 6 (6000.0 이상)
 - URP 17 이상
-- 불투명 재질만 변환합니다. 투명 재질과 알파 컷 재질은 그대로 둡니다.
+- 불투명·알파 컷 재질만 변환합니다. 투명 재질은 그대로 둡니다.
 
 ## 설치
 **Window > Package Manager > + > Install package from git URL…** 에 다음 주소를 넣습니다.
 ```
-https://github.com/choi-sunggyu/_VertexLightBaker.git#v0.1.1
+https://github.com/choi-sunggyu/_VertexLightBaker.git#v0.1.2
 ```
-`#v0.1.1` 부분은 버전 태그입니다. 빼면 main 최신 상태를 받습니다.
+`#v0.1.2` 부분은 버전 태그입니다. 빼면 main 최신 상태를 받습니다.
 
 ## 사용 방법
 > 씬을 크게 바꾸는 작업입니다. 깃에 커밋한 뒤 실행하세요. 원본 모델과 재질은 수정하지 않고 복사본을 만듭니다.
@@ -32,16 +32,19 @@ https://github.com/choi-sunggyu/_VertexLightBaker.git#v0.1.1
 
 **한 번에 적용**을 누르면 다음이 순서대로 실행됩니다.
 1. Static 오브젝트 전체의 밝기를 굽습니다. 씬에 `BakedShadowMap`을 두고 그림자를 드리울 물체 목록을 채웁니다.
-2. 방향광의 회전·색·세기를 `BakedShadowMap`에 저장하고 방향광을 지웁니다. Ctrl+Z로 되돌릴 수 있습니다.
-3. 재질을 복사본으로 교체합니다.
+2. 재질을 복사본으로 교체합니다.
 
    | 원본 | 정적 오브젝트 | 움직이는 물체 |
    |---|---|---|
-   | URP Lit / Simple Lit / Complex Lit / Baked Lit | `Custom/BakedVertexLit` | `Custom/LowCostCharacter` |
    | 이름에 toon이 들어간 셰이더 | `Custom/BakedToon` | `Custom/DynamicToon` |
-   | 외곽선(outline) 셰이더, 그 밖의 셰이더 | 그대로 둠 | 그대로 둠 |
+   | 방향광을 받는 그 밖의 셰이더 (URP Lit 계열, Lit 셰이더 그래프, Synty 등 서드파티 Lit) | `Custom/BakedVertexLit` | `Custom/LowCostCharacter` |
+   | 외곽선(outline) 셰이더, Unlit 등 방향광을 받지 않는 셰이더, 투명 재질 | 그대로 둠 | 그대로 둠 |
+
+   "방향광을 받는다"는 셰이더 이름이 아니라 방향광 그림자 키워드(`_MAIN_LIGHT_SHADOWS*`)를 선언했는지로 판단합니다. 알파 컷 재질은 기준값(`_Cutoff` / `_AlphaClipThreshold` / `_Alpha_Clip_Threshold`)을 옮겨 같은 모양으로 자릅니다.
 
    툰 셰이더에서는 밝은 색·그림자 색·경계 값(`_HColor`, `_SColor`, `_RampThreshold`, `_RampSmoothing`)을 옮깁니다.
+3. 방향광의 회전·색·세기를 `BakedShadowMap`에 저장하고 방향광을 지웁니다. Ctrl+Z로 되돌릴 수 있습니다.
+   **변환하지 못해 아직 방향광이 필요한 재질이 남아 있으면 방향광을 지우지 않고**, 결과 창과 콘솔에 그 재질 목록을 보여 줍니다.
 4. 실행 중 생성되는 오브젝트용 재질 짝을 `BakedMaterialRemap`에 저장합니다.
 5. 아무도 쓰지 않는 구운 파일을 지웁니다.
 
@@ -120,6 +123,7 @@ static void Register() => VertexLightBaker.ExtraToggleGroups = () =>
 - 빛 방향을 바꾸려면 다시 구워야 합니다. 낮밤 전환을 지원하지 않습니다.
 - 움직이는 물체는 배경 그림자만 받고, 다른 움직이는 물체의 그림자는 받지 않습니다.
 - 변환하지 않은 셰이더(외곽선 등)를 쓰는 물체는 그림자를 받지 않습니다.
+- 알파 컷 물체(잎·철망)는 그림자 지도에 구멍 없이 꽉 찬 모양으로 찍힙니다. 표면 자체는 정상적으로 잘립니다.
 - 메모리가 늘어납니다. 그림자 지도가 정적 8MB, 동적 2MB를 상시 차지하고, 메시 복사본도 추가됩니다.
 - `RenderTextureFormat.Shadowmap`을 지원하지 않는 기기에서는 그림자 없이 그립니다.
 
@@ -129,6 +133,8 @@ static void Register() => VertexLightBaker.ExtraToggleGroups = () =>
 | 편집 화면에서 그림자가 흐림 | 영역이 켜진 정적 물체 전체를 감쌉니다. Play 모드에서 실제로 켜진 물체 기준으로 확인하세요. 멀리 있는 물체는 "그림자 제외"에 넣으세요 |
 | 표면에 얼룩·줄무늬가 생김 | `BakedShadowMap`의 Depth Bias / Normal Bias를 조금 올리세요 |
 | 배경이 검게 보임 | 굽지 않은 메시에 배경 셰이더가 쓰인 경우입니다. 다시 구우세요 |
+| 적용 후 일부 물체가 밤처럼 어두움 (0.1.1 이하) | 이름으로 판별하지 못한 Lit 셰이더(Synty 등)·알파 컷 재질을 건너뛴 채 방향광을 지운 경우입니다. 0.1.2로 올린 뒤 **한 번에 적용**을 다시 실행하면 저장된 빛 값으로 변환됩니다 |
+| 적용 후에도 방향광이 남아 있음 | 변환하지 못한 재질이 있어 일부러 남긴 것입니다. 결과 창의 "방향광이 필요한 재질" 목록을 확인하세요 |
 | 생성한 물체가 원래 색이고 그림자가 없음 | 생성 지점에서 `BakedMaterialRemap.Apply`를 부르지 않은 경우입니다 |
 | 켜고 끄는 오브젝트 그림자가 미리 보이거나 사라지지 않음 | 해당 오브젝트에 `BakedShadowCaster`가 없는 경우입니다 |
 

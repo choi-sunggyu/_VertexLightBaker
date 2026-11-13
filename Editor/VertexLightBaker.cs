@@ -279,6 +279,16 @@ public class VertexLightBaker : EditorWindow
 
     static bool IsOutline(Shader s) => s.name.IndexOf("outline", System.StringComparison.OrdinalIgnoreCase) >= 0;
 
+    // 주 방향광을 받는 셰이더인지 (URP Lit 계열, Lit 셰이더 그래프, 대부분의 서드파티 Lit).
+    // 방향광 그림자 키워드를 선언했는지로 판단: 이름과 무관하게 "방향광을 지우면 어두워지는 셰이더"를 찾음
+    internal static bool UsesMainLight(Shader s)
+    {
+        if (s == null || IsOurShader(s)) return false;
+        foreach (string k in s.keywordSpace.keywordNames)
+            if (k.StartsWith("_MAIN_LIGHT_SHADOWS", StringComparison.Ordinal)) return true;
+        return false;
+    }
+
     static bool IsToon(Shader s) =>
         !IsOutline(s) &&
         (s.name.IndexOf("toon", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -317,16 +327,6 @@ public class VertexLightBaker : EditorWindow
         sw.Stop();
         if (baked.Count == 0) return;
 
-        // 2-1) 방향광: 값을 씬(BakedShadowMap)에 저장한 뒤 지움. 이후 굽기는 저장된 값으로 함
-        string lightResult = "없음 (BakedShadowMap 에 저장된 값 사용)";
-        if (sceneLight != null)
-        {
-            SaveBakeLight(sceneLight, FindOrCreateShadowMap());
-            lightResult = RemoveLight(sceneLight)
-                ? "값을 BakedShadowMap 에 저장하고 지움"
-                : "값을 BakedShadowMap 에 저장하고 꺼 둠 (같은 오브젝트에 다른 컴포넌트·자식이 있어 지우지 않음)";
-        }
-
         // 3) 재질 교체 (항상 복사본)
         string matFolder = outputFolder.TrimEnd('/') + "/Materials";
         EnsureFolder(matFolder);
@@ -353,6 +353,23 @@ public class VertexLightBaker : EditorWindow
             if (!VisibleSometime(r.transform, toggles) || r.gameObject.isStatic) continue;
             dynamicConverted += ConvertRenderer(r, isDynamic: true, vertexLit, bakedToon, dynamicShader, ctx);
         }
+        // 3-2) 방향광: 값을 씬(BakedShadowMap)에 저장. 변환하지 못해 아직 방향광으로 밝기를 내는 재질이 남아 있으면
+        //      지우지 않음 (지우면 그 물체들이 주변광만 받아 밤처럼 어두워짐). 이후 굽기는 저장된 값으로 함
+        string lightResult = "없음 (BakedShadowMap 에 저장된 값 사용)";
+        List<string> needLight = MaterialsNeedingLight(toggles);
+        if (sceneLight != null)
+        {
+            SaveBakeLight(sceneLight, FindOrCreateShadowMap());
+            if (needLight.Count > 0)
+                lightResult = "값을 저장했지만 지우지 않음: 방향광이 필요한 재질이 남음 (아래 목록)";
+            else
+                lightResult = RemoveLight(sceneLight)
+                    ? "값을 BakedShadowMap 에 저장하고 지움"
+                    : "값을 BakedShadowMap 에 저장하고 꺼 둠 (같은 오브젝트에 다른 컴포넌트·자식이 있어 지우지 않음)";
+        }
+        else if (needLight.Count > 0)
+            lightResult = "없음. 방향광이 필요한 재질이 남아 그 물체들은 어둡게 보임 (아래 목록)";
+
         // 3-3) 실행 중 프리팹에서 생성되는 오브젝트는 생성 시 바꿔 끼우도록 재질 짝을 저장 (BakedMaterialRemap.Apply)
         int remapped = SetupMaterialRemap(vertexLit, bakedToon, dynamicShader, ctx);
         AssetDatabase.SaveAssets();
@@ -380,12 +397,33 @@ public class VertexLightBaker : EditorWindow
             $"실행 중 생성 오브젝트 재질 짝: {remapped}개\n" +
             (ctx.noMainTexture.Count > 0 ? $"주 텍스처를 못 찾은 재질(색 확인 필요): {string.Join(", ", ctx.noMainTexture)}\n" : "") +
             $"그림자 제외 오브젝트: {statNoCast}개 / 켜고 끄는 오브젝트 묶음: {statCasters}개 / 그림자 길이 줄이기: {shadowSteepen:F2}\n" +
-            (ctx.skipped.Count > 0 ? $"그대로 둔 셰이더: {string.Join(", ", ctx.skipped)}" : "그대로 둔 셰이더: 없음");
+            (ctx.skipped.Count > 0 ? $"그대로 둔 셰이더: {string.Join(", ", ctx.skipped)}" : "그대로 둔 셰이더: 없음") +
+            (needLight.Count > 0 ? $"\n방향광이 필요한 재질 {needLight.Count}개: {Preview(needLight, 10)}" : "");
+        if (needLight.Count > 0)
+            Debug.LogWarning("[VertexLightBaker] 변환하지 못해 방향광이 필요한 재질이 남았습니다. 방향광을 지우지 않았습니다.\n" +
+                             string.Join("\n", needLight));
 
         Debug.Log("[VertexLightBaker] 한 번에 적용\n" + report);
         EditorUtility.DisplayDialog("한 번에 적용 완료", report + "\n\n씬을 저장(Ctrl+S)한 뒤 빌드하세요.", "확인");
     }
 
+
+    // 실행 중 보이는 렌더러 중, 변환하지 못해 아직 방향광으로 밝기를 내는 재질 ("재질 (셰이더)")
+    static List<string> MaterialsNeedingLight(HashSet<GameObject> toggles)
+    {
+        var found = new SortedSet<string>();
+        foreach (var r in FindObjectsByType<Renderer>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+        {
+            if (!(r is MeshRenderer || r is SkinnedMeshRenderer) || !r.enabled || !r.gameObject.scene.IsValid()) continue;
+            if (!VisibleSometime(r.transform, toggles)) continue;
+            foreach (var m in r.sharedMaterials)
+                if (m != null && UsesMainLight(m.shader)) found.Add($"{m.name} ({m.shader.name})");
+        }
+        return new List<string>(found);
+    }
+
+    static string Preview(List<string> items, int max) =>
+        string.Join(", ", items.GetRange(0, Math.Min(max, items.Count))) + (items.Count > max ? $" 외 {items.Count - max}개" : "");
 
     class ConvertContext
     {
@@ -439,14 +477,15 @@ public class VertexLightBaker : EditorWindow
     Material CopyFor(Material m, bool isDynamic, Shader vertexLit, Shader bakedToon, Shader dynamicShader, ConvertContext ctx)
     {
         Shader target;
-        if (UrpLitShaders.Contains(m.shader.name)) target = isDynamic ? dynamicShader : vertexLit;
-        else if (IsToon(m.shader)) target = isDynamic ? ctx.dynamicToon : bakedToon;
+        if (IsToon(m.shader)) target = isDynamic ? ctx.dynamicToon : bakedToon;
+        else if (UrpLitShaders.Contains(m.shader.name) || (!IsOutline(m.shader) && UsesMainLight(m.shader)))
+            target = isDynamic ? dynamicShader : vertexLit;
         else { ctx.skipped.Add(m.shader.name); return null; }
 
-        // 연구용 셰이더는 불투명 전용 → 투명·알파 컷 재질은 제외
-        bool transparent = m.HasProperty("_Surface") && m.GetFloat("_Surface") > 0.5f;
-        bool alphaClip = m.HasProperty("_AlphaClip") && m.GetFloat("_AlphaClip") > 0.5f;
-        if (transparent || alphaClip || m.renderQueue >= 2450) { ctx.skipped.Add($"{m.name}(투명/알파 컷)"); return null; }
+        // 투명 재질은 제외 (구운 셰이더는 불투명·알파 컷만 지원). 알파 컷 재질(AlphaTest 큐 2450)은 변환함
+        bool transparent = (m.HasProperty("_Surface") && m.GetFloat("_Surface") > 0.5f) ||
+                           m.renderQueue > (int)RenderQueue.GeometryLast;
+        if (transparent) { ctx.skipped.Add($"{m.name}(투명)"); return null; }
 
         var key = (m, target);
         if (ctx.copies.TryGetValue(key, out Material copy)) return copy;
@@ -457,6 +496,7 @@ public class VertexLightBaker : EditorWindow
 
         if (!TransferMainProps(m, copy)) ctx.noMainTexture.Add(m.name);
         CopyIfExists(m, copy, "_UseVertexColor");
+        TransferAlphaClip(m, copy);
         SetLightProps(copy, ctx);
 
         if (target == bakedToon || target == ctx.dynamicToon)
@@ -532,7 +572,9 @@ public class VertexLightBaker : EditorWindow
             if ((flags & ShaderPropertyFlags.MainTexture) != 0) texName = s.GetPropertyName(i);
             if ((flags & ShaderPropertyFlags.MainColor) != 0) colName = s.GetPropertyName(i);
         }
-        texName ??= FirstProperty(src, ShaderPropertyType.Texture, "_BaseMap", "_MainTex", "_Albedo", "_MainTexture", "_BaseTexture");
+        texName ??= FirstProperty(src, ShaderPropertyType.Texture, "_BaseMap", "_MainTex", "_Albedo", "_Albedo_Map", "_AlbedoMap",
+                                  "_MainTexture", "_BaseTexture", "_Base_Map", "_Diffuse", "_DiffuseMap");
+        texName ??= TextureNameContaining(src, "albedo", "diffuse", "basemap", "base_map", "maintex"); // 그 밖의 이름
         colName ??= FirstProperty(src, ShaderPropertyType.Color, "_BaseColor", "_Color", "_MainColor", "_Tint");
 
         if (colName != null) dst.SetColor("_BaseColor", src.GetColor(colName));
@@ -544,6 +586,20 @@ public class VertexLightBaker : EditorWindow
         return true;
     }
 
+    // 알파 컷 재질이면 복사본도 같은 기준값으로 자름 (URP Lit = _Cutoff, 셰이더 그래프 = _AlphaClipThreshold, Synty = _Alpha_Clip_Threshold)
+    internal static void TransferAlphaClip(Material src, Material dst)
+    {
+        bool clip = src.IsKeywordEnabled("_ALPHATEST_ON") ||
+                    (src.HasProperty("_AlphaClip") && src.GetFloat("_AlphaClip") > 0.5f);
+        if (!clip) return;
+        string n = FirstProperty(src, ShaderPropertyType.Range, "_Cutoff", "_AlphaClipThreshold", "_Alpha_Clip_Threshold") ??
+                   FirstProperty(src, ShaderPropertyType.Float, "_Cutoff", "_AlphaClipThreshold", "_Alpha_Clip_Threshold");
+        dst.SetFloat("_AlphaClip", 1f);
+        dst.EnableKeyword("_ALPHATEST_ON");
+        dst.SetFloat("_Cutoff", n != null ? src.GetFloat(n) : 0.5f);
+        dst.renderQueue = (int)RenderQueue.AlphaTest;
+    }
+
     // 툰 셰이더의 밝은 쪽 색, 그림자 색, 명암 경계 위치·부드러움을 옮김 (Toony Colors Pro 2 이름 기준, 없으면 기본값)
     static bool TransferToonProps(Material src, Material dst)
     {
@@ -553,6 +609,19 @@ public class VertexLightBaker : EditorWindow
         any |= CopyFloat(src, dst, "_RampThreshold", "_RampThreshold", "_ShadowThreshold", "_Threshold");
         any |= CopyFloat(src, dst, "_RampSmoothing", "_RampSmoothing", "_ShadowSmoothness", "_Smoothness");
         return any;
+    }
+
+    static string TextureNameContaining(Material m, params string[] parts)
+    {
+        Shader s = m.shader;
+        for (int i = 0; i < s.GetPropertyCount(); i++)
+        {
+            if (s.GetPropertyType(i) != ShaderPropertyType.Texture) continue;
+            string name = s.GetPropertyName(i);
+            foreach (string part in parts)
+                if (name.IndexOf(part, StringComparison.OrdinalIgnoreCase) >= 0) return name;
+        }
+        return null;
     }
 
     static string FirstProperty(Material m, ShaderPropertyType type, params string[] names)

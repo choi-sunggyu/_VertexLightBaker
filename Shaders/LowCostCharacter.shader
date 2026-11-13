@@ -12,6 +12,8 @@ Shader "Custom/LowCostCharacter"
     {
         _BaseMap("Base Map", 2D) = "white" {}
         _BaseColor("Base Color", Color) = (1,1,1,1)
+        [Toggle(_ALPHATEST_ON)] _AlphaClip("Alpha Clip", Float) = 0
+        _Cutoff("Alpha Cutoff", Range(0, 1)) = 0.5
         _AmbientColor("Ambient Color", Color) = (0.30, 0.32, 0.38, 1)
         _UseSceneAmbient("Use Scene Ambient (0 = Ambient Color)", Range(0, 1)) = 1
         [Toggle(_USE_VERTEX_COLOR)] _UseVertexColor("Use Vertex Color", Float) = 0
@@ -34,6 +36,7 @@ Shader "Custom/LowCostCharacter"
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
             half4  _BaseColor;
+            half   _Cutoff;
             half4  _AmbientColor;
             half   _UseSceneAmbient;
             float4 _BakedLightDir;
@@ -52,6 +55,7 @@ Shader "Custom/LowCostCharacter"
             #pragma vertex vert
             #pragma fragment frag
             #pragma shader_feature_local _USE_VERTEX_COLOR
+            #pragma shader_feature_local _ALPHATEST_ON
             #pragma shader_feature_local _SHADE_MASK
             #pragma multi_compile_fog
 
@@ -103,6 +107,9 @@ Shader "Custom/LowCostCharacter"
             half4 frag(Varyings IN) : SV_Target
             {
                 half4 albedo = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv) * _BaseColor;
+                #if defined(_ALPHATEST_ON)
+                    clip(albedo.a - _Cutoff); // 알파 컷 (잎·철망 등). 투명 재질은 변환하지 않음
+                #endif
                 #if defined(_USE_VERTEX_COLOR)
                     albedo *= IN.color;
                 #endif
@@ -123,18 +130,27 @@ Shader "Custom/LowCostCharacter"
             HLSLPROGRAM
             #pragma vertex vertDepth
             #pragma fragment fragDepth
+            #pragma shader_feature_local _ALPHATEST_ON
 
-            struct AttributesD { float4 positionOS : POSITION; };
-            struct VaryingsD   { float4 positionCS : SV_POSITION; };
+            struct AttributesD { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
+            struct VaryingsD   { float4 positionCS : SV_POSITION; float2 uv : TEXCOORD0; };
 
             VaryingsD vertDepth(AttributesD IN)
             {
                 VaryingsD OUT;
                 OUT.positionCS = TransformObjectToHClip(IN.positionOS.xyz);
+                OUT.uv = TRANSFORM_TEX(IN.uv, _BaseMap);
                 return OUT;
             }
 
-            half fragDepth(VaryingsD IN) : SV_Target { return IN.positionCS.z; }
+            half fragDepth(VaryingsD IN) : SV_Target
+            {
+                // 깊이에도 구멍을 뚫어야 깊이 텍스처를 쓰는 효과가 잎·철망 뒤를 가리지 않음
+                #if defined(_ALPHATEST_ON)
+                    clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, IN.uv).a * _BaseColor.a - _Cutoff);
+                #endif
+                return IN.positionCS.z;
+            }
             ENDHLSL
         }
     }
