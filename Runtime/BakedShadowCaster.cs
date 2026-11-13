@@ -6,7 +6,8 @@ namespace VLB
     /// <summary>
     /// 실행 중 켜졌다 꺼졌다 하는 오브젝트(해금 오브젝트, 철거되는 벽 등) 표식. 자식 포함.
     /// 켜지거나 꺼지면 저장된 그림자 지도(BakedShadowMap)를 다시 찍게 한다. 매 프레임 비용은 없다.
-    /// - 켜질 때: 등장 연출이 끝난 뒤 그림자를 넣는다 (IsAnimating 을 설정한 경우)
+    /// - 켜질 때: 등장 연출 동안은 움직이는 물체 그림자 지도에 매 프레임 찍혀 그림자가 연출을 따라가고,
+    ///   끝나면 정적 지도로 옮긴다 (IsAnimating 을 설정한 경우. 없으면 켜진 첫 프레임만 동적 지도)
     /// - 꺼질 때: 꺼지는 순간까지 그림자를 유지하고, 꺼지면 뺀다
     /// 직접 붙이거나, VertexLightBaker.ExtraToggleGroups 로 도구가 자동으로 붙이게 한다.
     /// </summary>
@@ -22,20 +23,41 @@ namespace VLB
         /// <summary>그림자 지도에 이 오브젝트(자식 포함)를 그려도 되는지</summary>
         public bool Shown { get; private set; }
 
+        /// <summary>등장 연출 중: 정적 지도 대신 움직이는 물체 지도에 매 프레임 찍음</summary>
+        public bool Appearing { get; private set; }
+
+        /// <summary>연출 중인 표식 수. 0 이면 BakedShadowMap 이 매 프레임 확인을 건너뜀</summary>
+        public static int AppearingCount { get; private set; }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        static void ResetStatics() => AppearingCount = 0;
+
         void OnEnable()
         {
             if (Application.isPlaying)
+            {
+                SetAppearing(true);
                 StartCoroutine(ShowAfterAppear());
+            }
             else
                 Show();
         }
 
         void OnDisable() // 꺼질 때 코루틴은 자동으로 멈춘다
         {
+            SetAppearing(false);
             if (!Shown)
                 return;
             Shown = false;
             BakedShadowMap.RequestRender();
+        }
+
+        void SetAppearing(bool value)
+        {
+            if (Appearing == value)
+                return;
+            Appearing = value;
+            AppearingCount += value ? 1 : -1;
         }
 
         System.Collections.IEnumerator ShowAfterAppear()
@@ -61,6 +83,7 @@ namespace VLB
 
         void Show()
         {
+            SetAppearing(false); // 같은 프레임의 LateUpdate 에서 정적 지도에 들어가므로 그림자가 끊기지 않음
             Shown = true;
             BakedShadowMap.RequestRender();
         }

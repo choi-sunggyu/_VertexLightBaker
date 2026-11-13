@@ -211,6 +211,15 @@ namespace VLB
                 if (r.enabled && r.gameObject.activeInHierarchy)
                     Draw(r);
             }
+            // 등장 연출 중인 켜고 끄는 오브젝트: 그림자가 연출(크기·위치)을 따라가도록 끝날 때까지 여기서 찍음
+            if (BakedShadowCaster.AppearingCount > 0)
+                for (var i = 0; i < casters.Length && i < owners.Length; i++)
+                {
+                    var r = casters[i];
+                    var owner = owners[i];
+                    if (owner != null && owner.Appearing && r != null && r.enabled && r.gameObject.activeInHierarchy)
+                        Draw(r);
+                }
             Graphics.ExecuteCommandBuffer(cmd);
         }
 

@@ -95,6 +95,9 @@ public class VertexLightBakerTests
 
         go.SetActive(true);
         Assert.IsTrue(caster.Shown);
+        // 편집 모드에는 등장 연출이 없음: 동적 지도로 찍히는 상태가 남으면 안 됨
+        Assert.IsFalse(caster.Appearing);
+        Assert.AreEqual(0, BakedShadowCaster.AppearingCount);
     }
 
     // 방향광을 지운 뒤에도 같은 빛으로 굽기: 저장한 값이 방향광에서 읽은 값과 같아야 함

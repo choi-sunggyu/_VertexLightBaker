@@ -5,7 +5,7 @@ URP 프로젝트에서 **방향광(Directional Light)과 실시간 그림자를 
 | 대상 | 밝기 (명암) | 그림자 |
 |---|---|---|
 | 정적 배경 (Static) | 에디터에서 정점마다 N·L·주변광을 구워 메시 복사본 UV3에 저장 | **정적 그림자 지도**: 시작할 때, 표식 오브젝트가 켜지거나 꺼질 때만 찍음 |
-| 켜졌다 꺼지는 오브젝트 (`BakedShadowCaster`) | 위와 같음 (꺼져 있어도 구워 둠) | 정적 지도에 포함. 켜져 있는 동안만 |
+| 켜졌다 꺼지는 오브젝트 (`BakedShadowCaster`) | 위와 같음 (꺼져 있어도 구워 둠) | 등장 연출 중에는 동적 지도에 매 프레임 찍혀 그림자가 연출을 따라감. 끝나면 정적 지도로 옮겨 꺼질 때까지 유지 |
 | 움직이는 물체 | 정점 셰이더가 고정 빛 방향(`_BakedLightDir`)과 법선으로 계산 | **동적 그림자 지도**: 움직이는 물체만 매 프레임 깊이만 찍음 |
 
 ## 요구 사항
@@ -16,9 +16,9 @@ URP 프로젝트에서 **방향광(Directional Light)과 실시간 그림자를 
 ## 설치
 **Window > Package Manager > + > Install package from git URL…** 에 다음 주소를 넣습니다.
 ```
-https://github.com/choi-sunggyu/_VertexLightBaker.git#v0.1.0
+https://github.com/choi-sunggyu/_VertexLightBaker.git#v0.1.1
 ```
-`#v0.1.0` 부분은 버전 태그입니다. 빼면 main 최신 상태를 받습니다.
+`#v0.1.1` 부분은 버전 태그입니다. 빼면 main 최신 상태를 받습니다.
 
 ## 사용 방법
 > 씬을 크게 바꾸는 작업입니다. 깃에 커밋한 뒤 실행하세요. 원본 모델과 재질은 수정하지 않고 복사본을 만듭니다.
@@ -54,8 +54,8 @@ var go = Instantiate(prefab);
 VLB.BakedMaterialRemap.Apply(go);
 ```
 
-### 2. 등장 연출이 끝난 뒤 그림자 넣기 (선택)
-설정하지 않으면 켜진 다음 프레임에 그림자를 넣습니다. DOTween을 쓴다면 다음처럼 연결합니다.
+### 2. 등장 연출과 그림자 맞추기 (선택)
+연출 중에는 그림자가 움직임을 따라가고, 끝나면 정적 그림자로 고정됩니다. 설정하지 않으면 켜진 다음 프레임에 고정됩니다. DOTween을 쓴다면 다음처럼 연결합니다.
 ```csharp
 [RuntimeInitializeOnLoadMethod]
 static void HookVLB() => VLB.BakedShadowCaster.IsAnimating = t => DG.Tweening.DOTween.IsTweening(t);

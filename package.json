@@ -1,6 +1,6 @@
 {
   "name": "com.vlb.vertex-light-baker",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "displayName": "Vertex Light Baker",
   "description": "방향광과 실시간 그림자 없이 조명을 그리는 URP 도구. 정점마다 구운 N·L·주변광(UV3)과, 켜짐·꺼짐 때만 다시 찍는 그림자 지도를 씁니다. 움직이는 물체는 고정 빛 방향으로 정점 조명을 계산하고, 그림자는 매 프레임 깊이만 찍습니다.",
   "unity": "6000.0",
