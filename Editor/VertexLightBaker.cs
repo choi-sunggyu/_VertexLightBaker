@@ -576,6 +576,7 @@ public class VertexLightBaker : EditorWindow
                                   "_MainTexture", "_BaseTexture", "_Base_Map", "_Diffuse", "_DiffuseMap");
         texName ??= TextureNameContaining(src, "albedo", "diffuse", "basemap", "base_map", "maintex"); // 그 밖의 이름
         colName ??= FirstProperty(src, ShaderPropertyType.Color, "_BaseColor", "_Color", "_MainColor", "_Tint");
+        colName ??= FirstPlainColor(src); // 텍스처 없이 색 속성으로만 칠하는 셰이더 그래프 (예: _BoxColor)
 
         if (colName != null) dst.SetColor("_BaseColor", src.GetColor(colName));
         if (texName == null) return false;
@@ -609,6 +610,28 @@ public class VertexLightBaker : EditorWindow
         any |= CopyFloat(src, dst, "_RampThreshold", "_RampThreshold", "_ShadowThreshold", "_Threshold");
         any |= CopyFloat(src, dst, "_RampSmoothing", "_RampSmoothing", "_ShadowSmoothness", "_Smoothness");
         return any;
+    }
+
+    // 셰이더에 선언된 순서상 첫 "표면 색" 속성. 보조 색(발광·그림자·반사광·외곽선 등)과 HDR·숨김 속성은 건너뜀.
+    // shortcut: 여러 색을 섞는 셰이더(예: 상자색 + 테이프색)는 첫 색 하나로만 칠해짐. 무늬까지 필요하면 원본 셰이더의 Meta 패스로 알베도를 텍스처에 구워 옮길 것
+    static readonly string[] NonSurfaceColorWords =
+        { "emiss", "shadow", "shade", "spec", "outline", "rim", "fog", "highlight", "reflect", "fresnel", "glow", "sss" };
+
+    internal static string FirstPlainColor(Material m)
+    {
+        Shader s = m.shader;
+        for (int i = 0; i < s.GetPropertyCount(); i++)
+        {
+            if (s.GetPropertyType(i) != ShaderPropertyType.Color) continue;
+            var flags = s.GetPropertyFlags(i);
+            if ((flags & (ShaderPropertyFlags.HDR | ShaderPropertyFlags.HideInInspector)) != 0) continue;
+            string name = s.GetPropertyName(i);
+            bool auxiliary = false;
+            foreach (string w in NonSurfaceColorWords)
+                if (name.IndexOf(w, StringComparison.OrdinalIgnoreCase) >= 0) { auxiliary = true; break; }
+            if (!auxiliary) return name;
+        }
+        return null;
     }
 
     static string TextureNameContaining(Material m, params string[] parts)

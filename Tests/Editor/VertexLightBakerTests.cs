@@ -130,6 +130,36 @@ public class VertexLightBakerTests
         Assert.AreEqual(colorFromLight.b, colorStored.b, 1e-4f);
     }
 
+    // 셰이더 그래프 노드(VLB Baked Light)가 읽는 전역 빛은 굽기에 쓴 빛과 같아야 함 (방향광을 지운 뒤에도)
+    [Test]
+    public void BakeLightGlobals_MatchStoredLight()
+    {
+        var lightGo = new GameObject("LightTest");
+        var mapGo = new GameObject("MapTest");
+        created.Add(lightGo); created.Add(mapGo);
+        mapGo.SetActive(false);
+        var map = mapGo.AddComponent<BakedShadowMap>();
+        var light = lightGo.AddComponent<Light>();
+        light.type = LightType.Directional;
+        light.color = new Color(1f, 0.8f, 0.6f);
+        light.intensity = 1.3f;
+        lightGo.transform.rotation = Quaternion.Euler(40f, -60f, 0f);
+
+        VertexLightBaker.SaveBakeLight(light, map);
+        Object.DestroyImmediate(lightGo);
+        Assert.IsTrue(VertexLightBaker.ResolveBakeLight(null, map, out var dir, out var color));
+        mapGo.SetActive(true);
+
+        var gColor = Shader.GetGlobalVector("_VLB_LightColor");
+        var gDir = (Vector3)Shader.GetGlobalVector("_VLB_LightDir");
+        Assert.Less(Vector3.Distance(dir, gDir), 1e-4f);
+        Assert.AreEqual(color.r, gColor.x, 1e-4f);
+        Assert.AreEqual(color.g, gColor.y, 1e-4f);
+        Assert.AreEqual(color.b, gColor.z, 1e-4f);
+        Assert.IsNotNull(UnityEditor.AssetDatabase.LoadAssetAtPath<Object>(
+            "Packages/com.vlb.vertex-light-baker/Shaders/VLBBakedLight.shadersubgraph"));
+    }
+
     // 꺼 둔(비활성) 오브젝트의 방향광도 굽기 기준으로 찾아야 함
     [Test]
     public void FindMainDirectionalLight_IncludesInactiveObject()
@@ -189,6 +219,23 @@ public class VertexLightBakerTests
 
         VertexLightBaker.TransferAlphaClip(opaque, dstOpaque); // 불투명은 그대로
         Assert.IsFalse(dstOpaque.IsKeywordEnabled("_ALPHATEST_ON"));
+    }
+
+    // 원인 재현: 텍스처 없이 _BoxColor 같은 색 속성으로만 칠하는 셰이더 그래프가 변환 후 흰색이 됐음.
+    // 이름을 모르는 색이면 보조 색(발광·그림자, HDR)을 건너뛴 첫 표면 색을 써야 함
+    [Test]
+    public void FirstPlainColor_SkipsAuxiliaryColors()
+    {
+        var shader = UnityEditor.ShaderUtil.CreateShaderAsset(
+            "Shader \"Hidden/VLBTest/BoxColor\" { Properties {" +
+            " [HDR] _Glow(\"G\", Color) = (1,1,1,1)" +
+            " _ShadowColor(\"S\", Color) = (0,0,0,1)" +
+            " _BoxColor(\"B\", Color) = (0.7,0.5,0.3,1)" +
+            " _TapeColor(\"T\", Color) = (0.9,0.8,0.6,1) }" +
+            " SubShader { Pass { } } }");
+        var mat = new Material(shader);
+        created.Add(shader); created.Add(mat);
+        Assert.AreEqual("_BoxColor", VertexLightBaker.FirstPlainColor(mat));
     }
 
     // 보정 마스크는 기본 꺼짐: 기존 재질의 모습이 바뀌지 않음

@@ -32,15 +32,13 @@ namespace VLB
         [Tooltip("casters 와 같은 순서. 해금 오브젝트면 가장 가까운 표식, 정적 배경이면 비움")]
         [SerializeField] BakedShadowCaster[] owners = new BakedShadowCaster[0];
 
-        // 실행 중에는 쓰지 않음. 씬에 방향광 오브젝트가 없어도 VertexLightBaker 가 이 값으로 다시 구움
-#pragma warning disable 0414 // 에디터 도구가 SerializedObject 로만 읽고 씀
+        // 씬에 방향광 오브젝트가 없어도 VertexLightBaker 가 이 값으로 다시 구움. 실행 중에는 셰이더 그래프용 전역 빛으로만 씀
         [Header("굽기 기준 빛 (방향광 오브젝트 대신)")]
         [Tooltip("방향광의 회전값과 같음. 바꾼 뒤 Vertex Light Baker 로 다시 적용해야 화면에 반영됨")]
         [SerializeField] Vector3 bakeLightRotation = new Vector3(50f, -30f, 0f);
         [SerializeField] Color bakeLightColor = Color.white;
         [Tooltip("0 = 아직 저장 안 됨 (굽기 도구가 이 값을 쓰지 않음)")]
         [SerializeField] float bakeLightIntensity = 0f;
-#pragma warning restore 0414
 
         static readonly int MapId = Shader.PropertyToID("_VLB_ShadowMap");
         static readonly int DynMapId = Shader.PropertyToID("_VLB_DynShadowMap");
@@ -48,6 +46,8 @@ namespace VLB
         static readonly int OnId = Shader.PropertyToID("_VLB_ShadowOn");
         static readonly int BiasId = Shader.PropertyToID("_VLB_ShadowBias");
         static readonly int LightDirId = Shader.PropertyToID("_VLB_ShadowLightDir");
+        static readonly int BakeLightColorId = Shader.PropertyToID("_VLB_LightColor");
+        static readonly int BakeLightDirId = Shader.PropertyToID("_VLB_LightDir");
 
         static BakedShadowMap active;
         RenderTexture map, dynMap;
@@ -101,7 +101,15 @@ namespace VLB
         void OnEnable()
         {
             active = this;
+            SetBakeLightGlobals();
             RequestRender();
+        }
+
+        // 셰이더 그래프용 빛 (VLBBakedLight.hlsl). 굽기 도구와 같은 값: 선형 색 × 세기, 표면에서 빛 쪽 방향. 저장 전(세기 0)이면 빛 0
+        void SetBakeLightGlobals()
+        {
+            Shader.SetGlobalVector(BakeLightColorId, bakeLightColor.linear * bakeLightIntensity);
+            Shader.SetGlobalVector(BakeLightDirId, -(Quaternion.Euler(bakeLightRotation) * Vector3.forward));
         }
 
         void OnDisable()
@@ -141,7 +149,11 @@ namespace VLB
             return rt;
         }
 
-        void OnValidate() => dirty = true;
+        void OnValidate()
+        {
+            dirty = true;
+            SetBakeLightGlobals();
+        }
 
         void LateUpdate()
         {
